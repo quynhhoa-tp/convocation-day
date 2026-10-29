@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/app/supabase";
 
@@ -171,6 +171,7 @@ function GraduateIllustration() {
 }
 
 export default function Home() {
+  const musicRef = useRef<HTMLAudioElement>(null);
   const [guestName, setGuestName] = useState("");
   const [submittedName, setSubmittedName] = useState("");
   const [isLetterOpen, setIsLetterOpen] = useState(false);
@@ -182,6 +183,46 @@ export default function Home() {
   const [isWishesLoading, setIsWishesLoading] = useState(true);
   const [isWishSubmitting, setIsWishSubmitting] = useState(false);
   const [wishError, setWishError] = useState("");
+  const [musicState, setMusicState] = useState<
+    "playing" | "paused" | "blocked" | "error"
+  >("paused");
+
+  function requestMusicPlayback() {
+    const player = musicRef.current;
+    if (!player) return;
+
+    void player.play().catch(() => {
+      setMusicState("blocked");
+    });
+  }
+
+  useEffect(() => {
+    const player = musicRef.current;
+    if (!player) return;
+
+    void player.play().catch(() => {
+      setMusicState("blocked");
+    });
+
+    return () => player.pause();
+  }, []);
+
+  async function toggleMusic() {
+    const player = musicRef.current;
+    if (!player) return;
+
+    if (!player.paused) {
+      player.pause();
+      return;
+    }
+
+    try {
+      await player.play();
+    } catch (error) {
+      console.error("Không thể phát nhạc.", error);
+      setMusicState("blocked");
+    }
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -296,7 +337,10 @@ export default function Home() {
   function openInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = guestName.trim();
-    if (name) setSubmittedName(name);
+    if (name) {
+      setSubmittedName(name);
+      requestMusicPlayback();
+    }
   }
 
   async function addWish(event: FormEvent<HTMLFormElement>) {
@@ -328,19 +372,57 @@ export default function Home() {
       <div className="ambient ambient-right" aria-hidden="true">✿</div>
 
       <header className="topbar">
-        <a className="brand" href="#" aria-label="FPT · Trương Phạm Quỳnh Hoa">
-          <Image
-            className="fpt-logo"
-            src="/fpt-university-logo.png"
-            alt="FPT University"
-            width={1280}
-            height={500}
-            priority
-          />
-          <span className="brand-divider" aria-hidden="true" />
-          <span className="brand-name">Trương Phạm Quỳnh Hoa</span>
-        </a>
+        <div className="brand-group">
+          <a className="brand" href="#" aria-label="FPT · Trương Phạm Quỳnh Hoa">
+            <Image
+              className="fpt-logo"
+              src="/fpt-university-logo.png"
+              alt="FPT University"
+              width={1280}
+              height={500}
+              priority
+            />
+            <span className="brand-divider" aria-hidden="true" />
+            <span className="brand-name">Trương Phạm Quỳnh Hoa</span>
+          </a>
+        </div>
         <span className="topbar-note">một ngày thật đặc biệt đang chờ ✨</span>
+        <div
+          className={`music-control${musicState === "playing" ? " is-playing" : ""}`}
+        >
+          <audio
+            ref={musicRef}
+            src="/CASTING.mp3"
+            autoPlay
+            loop
+            preload="auto"
+            onPlay={() => setMusicState("playing")}
+            onPause={() => setMusicState("paused")}
+            onError={() => setMusicState("error")}
+          />
+          <button
+            className="music-toggle"
+            type="button"
+            onClick={toggleMusic}
+            disabled={musicState === "error"}
+            aria-label={
+              musicState === "playing" ? "Tạm dừng nhạc" : "Phát nhạc"
+            }
+            title={
+              musicState === "playing"
+                ? "Tạm dừng nhạc"
+                : musicState === "error"
+                  ? "Không tải được nhạc"
+                  : musicState === "blocked"
+                    ? "Chạm để bật nhạc"
+                    : "Bật nhạc"
+            }
+          >
+            <span className="vinyl-record" aria-hidden="true">
+              <span />
+            </span>
+          </button>
+        </div>
       </header>
 
       {!submittedName ? (

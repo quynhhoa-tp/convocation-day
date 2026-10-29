@@ -90,6 +90,7 @@ textarea:focus-visible {
 }
 
 .topbar {
+  position: relative;
   display: flex;
   width: min(100%, 1120px);
   height: 82px;
@@ -106,6 +107,11 @@ textarea:focus-visible {
   gap: 13px;
   color: #51465a;
   text-decoration: none;
+}
+
+.brand-group {
+  display: flex;
+  align-items: center;
 }
 
 .fpt-logo {
@@ -131,6 +137,8 @@ textarea:focus-visible {
 }
 
 .topbar-note {
+  margin-left: auto;
+  margin-right: 48px;
   color: #817783;
   font-size: 12px;
   letter-spacing: 0.02em;
@@ -1089,6 +1097,80 @@ textarea:focus-visible {
   color: #715293;
 }
 
+.music-control {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.music-control audio {
+  display: none;
+}
+
+.music-toggle {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 250, 252, 0.94);
+  color: #704d7e;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(83, 64, 106, 0.18);
+  transition: background 160ms ease;
+}
+
+.music-toggle:hover {
+  background: rgba(245, 239, 248, 0.8);
+}
+
+.music-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.vinyl-record {
+  position: relative;
+  display: block;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, transparent 0 19%, rgba(255,255,255,.13) 20% 20.7%, transparent 21.5% 34%, rgba(255,255,255,.1) 35% 35.8%, transparent 36.6% 49%, rgba(255,255,255,.1) 50% 50.8%, transparent 51.6% 65%, rgba(255,255,255,.1) 66% 66.8%, transparent 67.6%),
+    conic-gradient(from 25deg, #342b3c, #15131a, #403347, #18151d, #342b3c);
+  box-shadow: 0 4px 11px rgba(40, 30, 45, 0.24);
+  animation: vinyl-spin 3.2s linear infinite;
+  animation-play-state: paused;
+}
+
+.music-control.is-playing .vinyl-record {
+  animation-play-state: running;
+}
+
+.vinyl-record > span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #fff4ed;
+  border-radius: 50%;
+  background: radial-gradient(circle, #f7c9a7 0 2px, #b45b69 2.5px 100%);
+  transform: translate(-50%, -50%);
+}
+
+@keyframes vinyl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .site-footer {
   display: flex;
   min-height: 57px;
@@ -1329,7 +1411,8 @@ textarea:focus-visible {
   }
 
   .topbar-note {
-    max-width: 105px;
+    max-width: 82px;
+    margin-right: 40px;
     font-size: 9px;
     text-align: right;
   }
@@ -1348,6 +1431,11 @@ textarea:focus-visible {
 
   .brand-name {
     font-size: 15px;
+  }
+
+  .vinyl-record {
+    width: 30px;
+    height: 30px;
   }
 
   .landing-stage {
