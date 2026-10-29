@@ -20,6 +20,17 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Shared wishes (Supabase)
+
+Wishes are stored in Supabase and appear for all visitors in real time. To connect a Supabase project:
+
+1. Create a project and copy its Project URL and publishable key from the API settings.
+2. Copy `.env.example` to `.env.local` and fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+3. Run `supabase/schema.sql` in the Supabase SQL Editor to create the table, access policies, and realtime publication.
+4. Restart the development server. Add the same public environment variables to your hosting provider before deployment.
+
+The database policies allow anyone to read and submit a validated wish, but not edit or delete wishes. Never put a Supabase service-role key in the browser or in `NEXT_PUBLIC_*` variables. Wishes previously saved in this browser's local storage are uploaded to Supabase the first time the app connects successfully.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

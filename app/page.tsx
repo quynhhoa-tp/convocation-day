@@ -1,7 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { getSupabaseClient } from "@/app/supabase";
 
 const flowerOptions = [
   { id: "daisy", name: "Cúc nhỏ", icon: "🌼", bouquet: "🌼 🌿 🌼" },
@@ -17,28 +19,19 @@ const flowerOptions = [
 ] as const;
 
 const WISH_STORAGE_KEY = "quynh-hoa-graduation-wishes";
-const WISHES_CHANGED_EVENT = "quynh-hoa-wishes-changed";
 type WishEntry = {
   id: string;
   author: string;
   message: string;
   flowerId: (typeof flowerOptions)[number]["id"];
+  createdAt: string;
 };
 
-function getSavedWishesSnapshot() {
-  return window.localStorage.getItem(WISH_STORAGE_KEY) ?? "[]";
-}
+type LegacyWishEntry = Omit<WishEntry, "createdAt">;
 
-function subscribeToSavedWishes(onChange: () => void) {
-  window.addEventListener("storage", onChange);
-  window.addEventListener(WISHES_CHANGED_EVENT, onChange);
-  return () => {
-    window.removeEventListener("storage", onChange);
-    window.removeEventListener(WISHES_CHANGED_EVENT, onChange);
-  };
-}
+let legacyMigrationInProgress: Promise<void> | null = null;
 
-function parseSavedWishes(snapshot: string): WishEntry[] {
+function parseSavedWishes(snapshot: string): LegacyWishEntry[] {
   const parsed: unknown = JSON.parse(snapshot);
   if (!Array.isArray(parsed) || !parsed.every(isWishEntry)) {
     throw new Error("Dữ liệu lời chúc đã lưu không đúng định dạng.");
@@ -46,7 +39,11 @@ function parseSavedWishes(snapshot: string): WishEntry[] {
   return parsed;
 }
 
-function isWishEntry(value: unknown): value is WishEntry {
+function isFlowerId(value: unknown): value is WishEntry["flowerId"] {
+  return flowerOptions.some((option) => option.id === value);
+}
+
+function isWishEntry(value: unknown): value is LegacyWishEntry {
   if (typeof value !== "object" || value === null) return false;
 
   const entry = value as Record<string, unknown>;
@@ -54,8 +51,50 @@ function isWishEntry(value: unknown): value is WishEntry {
     typeof entry.id === "string" &&
     typeof entry.author === "string" &&
     typeof entry.message === "string" &&
-    flowerOptions.some((option) => option.id === entry.flowerId)
+    isFlowerId(entry.flowerId)
   );
+}
+
+async function migrateSavedWishes(supabase: ReturnType<typeof getSupabaseClient>) {
+  const saved = window.localStorage.getItem(WISH_STORAGE_KEY);
+  if (!saved) return;
+
+  const legacyWishes = parseSavedWishes(saved);
+  if (legacyWishes.length > 0) {
+    const { error } = await supabase.from("wishes").upsert(
+      legacyWishes.map((wish) => ({
+        id: wish.id,
+        author: wish.author,
+        message: wish.message,
+        flower_id: wish.flowerId,
+      })),
+      { onConflict: "id", ignoreDuplicates: true },
+    );
+    if (error) throw error;
+  }
+
+  window.localStorage.removeItem(WISH_STORAGE_KEY);
+}
+
+function migrateSavedWishesOnce(supabase: ReturnType<typeof getSupabaseClient>) {
+  if (!legacyMigrationInProgress) {
+    legacyMigrationInProgress = migrateSavedWishes(supabase).finally(() => {
+      legacyMigrationInProgress = null;
+    });
+  }
+  return legacyMigrationInProgress;
+}
+
+function formatWishDate(date: string) {
+  return new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Ho_Chi_Minh",
+  }).format(new Date(date));
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Đã xảy ra lỗi không xác định.";
 }
 
 function GraduateIllustration() {
@@ -139,12 +178,109 @@ export default function Home() {
   const [selectedFlower, setSelectedFlower] =
     useState<(typeof flowerOptions)[number]["id"]>("daisy");
   const [wish, setWish] = useState("");
-  const savedWishes = useSyncExternalStore(
-    subscribeToSavedWishes,
-    getSavedWishesSnapshot,
-    () => "[]",
-  );
-  const wishes = parseSavedWishes(savedWishes);
+  const [wishes, setWishes] = useState<WishEntry[]>([]);
+  const [isWishesLoading, setIsWishesLoading] = useState(true);
+  const [isWishSubmitting, setIsWishSubmitting] = useState(false);
+  const [wishError, setWishError] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+    let latestRequest = 0;
+    let supabaseClient: ReturnType<typeof getSupabaseClient> | undefined;
+    let channel: RealtimeChannel | undefined;
+
+    void Promise.resolve()
+      .then(() => {
+        const supabase = getSupabaseClient();
+        if (!isMounted) return;
+        supabaseClient = supabase;
+
+        const loadWishes = async () => {
+          const request = ++latestRequest;
+          const { data, error } = await supabase
+            .from("wishes")
+            .select("id, author, message, flower_id, created_at")
+            .order("created_at", { ascending: false });
+
+          if (request !== latestRequest || !isMounted) return;
+          if (error) throw error;
+
+          const nextWishes = data.map((entry) => {
+            if (
+              typeof entry.id !== "string" ||
+              typeof entry.author !== "string" ||
+              typeof entry.message !== "string" ||
+              !isFlowerId(entry.flower_id) ||
+              typeof entry.created_at !== "string" ||
+              !Number.isFinite(Date.parse(entry.created_at))
+            ) {
+              throw new Error("Một lời chúc trên hệ thống không đúng định dạng.");
+            }
+            return {
+              id: entry.id,
+              author: entry.author,
+              message: entry.message,
+              flowerId: entry.flower_id,
+              createdAt: entry.created_at,
+            };
+          });
+          setWishes(nextWishes);
+          setIsWishesLoading(false);
+          setWishError("");
+        };
+
+        const reportLoadError = (error: unknown) => {
+          console.error("Không thể tải danh sách lời chúc từ Supabase.", error);
+          if (isMounted) {
+            setIsWishesLoading(false);
+            setWishError(`Không thể tải lời chúc: ${getErrorMessage(error)}`);
+          }
+        };
+
+        channel = supabase
+          .channel("public-wishes")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "wishes" },
+            () => {
+              void loadWishes().catch(reportLoadError);
+            },
+          )
+          .subscribe((status, error) => {
+            if (
+              isMounted &&
+              (status === "CHANNEL_ERROR" || status === "TIMED_OUT")
+            ) {
+              console.error("Kênh realtime Supabase gặp lỗi.", error);
+              setWishError(
+                `Kết nối cập nhật lời chúc realtime gặp lỗi (${status}).`,
+              );
+            }
+          });
+
+        void loadWishes().catch(reportLoadError);
+        void migrateSavedWishesOnce(supabase).catch((error: unknown) => {
+          console.error("Không thể chuyển lời chúc cũ lên Supabase.", error);
+          if (isMounted) {
+            setWishError(`Không thể đồng bộ lời chúc đã lưu trước đây: ${getErrorMessage(error)}`);
+          }
+        });
+      })
+      .catch((error: unknown) => {
+        console.error("Không thể khởi tạo Supabase.", error);
+        if (isMounted) {
+          setIsWishesLoading(false);
+          setWishError(`Không thể kết nối Supabase: ${getErrorMessage(error)}`);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+      if (supabaseClient && channel) {
+        void supabaseClient.removeChannel(channel);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isEnvelopeOpening) return;
@@ -163,27 +299,27 @@ export default function Home() {
     if (name) setSubmittedName(name);
   }
 
-  function addWish(event: FormEvent<HTMLFormElement>) {
+  async function addWish(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const message = wish.trim();
     if (!message || !submittedName) return;
-    const nextWishes = [
-      {
-        id: `${Date.now()}-${wishes.length}`,
+
+    setIsWishSubmitting(true);
+    setWishError("");
+    try {
+      const { error } = await getSupabaseClient().from("wishes").insert({
         author: submittedName,
         message,
-        flowerId: selectedFlower,
-      },
-      ...wishes,
-    ];
-    try {
-      window.localStorage.setItem(WISH_STORAGE_KEY, JSON.stringify(nextWishes));
-      window.dispatchEvent(new Event(WISHES_CHANGED_EVENT));
+        flower_id: selectedFlower,
+      });
+      if (error) throw error;
+      setWish("");
     } catch (error) {
-      console.error("Không thể lưu lời chúc trên thiết bị này.", error);
-      return;
+      console.error("Không thể lưu lời chúc lên Supabase.", error);
+      setWishError(`Không thể gửi lời chúc: ${getErrorMessage(error)}`);
+    } finally {
+      setIsWishSubmitting(false);
     }
-    setWish("");
   }
 
   return (
@@ -410,11 +546,22 @@ export default function Home() {
               />
               <div className="wish-form-footer">
                 <span>{wish.length}/280 ký tự</span>
-                <button className="primary-button wish-submit" type="submit">
-                  Gửi lời chúc <span aria-hidden="true">♡</span>
+                <button
+                  className="primary-button wish-submit"
+                  type="submit"
+                  disabled={isWishSubmitting}
+                >
+                  {isWishSubmitting ? "Đang gửi..." : "Gửi lời chúc"}
+                  <span aria-hidden="true">{isWishSubmitting ? "✦" : "♡"}</span>
                 </button>
               </div>
             </form>
+
+            {wishError && (
+              <p className="wish-error" role="alert">
+                {wishError}
+              </p>
+            )}
 
             {wishes.length > 0 ? (
               <ul className="wish-list" aria-live="polite">
@@ -431,11 +578,18 @@ export default function Home() {
                       <div className="wish-note-content">
                         <strong>{entry.author}</strong>
                         <p>{entry.message}</p>
+                        <time dateTime={entry.createdAt}>
+                          {formatWishDate(entry.createdAt)}
+                        </time>
                       </div>
                     </li>
                   );
                 })}
               </ul>
+            ) : isWishesLoading ? (
+              <p className="empty-wishes" role="status">
+                <span aria-hidden="true">✦</span> Đang tải lời chúc...
+              </p>
             ) : (
               <p className="empty-wishes">
                 <span aria-hidden="true">🌱</span> Chưa có lời chúc nào mới.

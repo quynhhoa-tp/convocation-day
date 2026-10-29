@@ -987,6 +987,19 @@ textarea:focus-visible {
   box-shadow: 0 8px 18px rgba(177, 92, 68, 0.18);
 }
 
+.wish-submit:disabled {
+  cursor: wait;
+  opacity: 0.7;
+  transform: none;
+}
+
+.wish-error {
+  margin: 12px 0 0;
+  color: #a33b46;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 .wish-list {
   display: grid;
   gap: 10px;
@@ -1036,6 +1049,13 @@ textarea:focus-visible {
 .wish-note-content p {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.wish-note-content time {
+  display: block;
+  margin-top: 6px;
+  color: #a09aa6;
+  font-size: 10px;
 }
 
 .empty-wishes {
